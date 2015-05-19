@@ -4,4 +4,5 @@ cp -av ./neutron_qos/services/qos /usr/lib/python2.7/site-packages/neutron/servi
 cp -v ./neutron_qos/extensions/qos.py /usr/lib/python2.7/site-packages/neutron/extensions/
 cp -v ./neutron_qos/api/rpc/agentnotifiers/qos_rpc_agent_api.py /usr/lib/python2.7/site-packages/neutron/api/rpc/agentnotifiers/
 cp -v ./etc/neutron/rootwrap.d/qos.filters /usr/share/neutron/rootwrap/
-
+cp -v neutron-qos-agent /usr/bin/
+cp -v neutron-qos-agent.service /usr/lib/systemd/system/
