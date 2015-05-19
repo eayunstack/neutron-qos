@@ -29,6 +29,8 @@ LOG = logging.getLogger(__name__)
 
 
 class Qos(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    __tablename__ = 'eayun_qoss'
+
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     direction = sa.Column(sa.Enum('ingress', 'egress', name='qoss_direction'),
@@ -38,16 +40,17 @@ class Qos(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     rate = sa.Column(sa.BigInteger, nullable=False)
     burst = sa.Column(sa.BigInteger)
     cburst = sa.Column(sa.BigInteger)
-    default_queue_id = sa.Column(sa.String(36), sa.ForeignKey('qosqueues.id'))
+    default_queue_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey('eayun_qosqueues.id'))
     port = orm.relationship(
         models_v2.Port,
         backref=orm.backref(
-            'qoss', cascade='all,delete', lazy='joined', uselist=True),
+            'eayun_qoss', cascade='all,delete', lazy='joined', uselist=True),
         primaryjoin='Port.id==Qos.port_id')
     router = orm.relationship(
         l3_db.Router,
         backref=orm.backref(
-            'qoss', cascade='all,delete', lazy='joined', uselist=True),
+            'eayun_qoss', cascade='all,delete', lazy='joined', uselist=True),
         primaryjoin='Router.id==Qos.router_id')
     default_queue = orm.relationship(
         "QosQueue",
@@ -55,11 +58,13 @@ class Qos(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 
 class QosQueue(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    __tablename__ = 'eayun_qosqueues'
+
     qos_id = sa.Column(sa.String(36),
-                       sa.ForeignKey('qoss.id'),
+                       sa.ForeignKey('eayun_qoss.id'),
                        nullable=False)
     parent_id = sa.Column(sa.String(36),
-                          sa.ForeignKey('qosqueues.id'))
+                          sa.ForeignKey('eayun_qosqueues.id'))
     prio = sa.Column(sa.Integer)
     rate = sa.Column(sa.BigInteger, nullable=False)
     ceil = sa.Column(sa.BigInteger)
@@ -79,11 +84,13 @@ class QosQueue(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 
 class QosFilter(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    __tablename__ = 'eayun_qosfilters'
+
     qos_id = sa.Column(sa.String(36),
-                       sa.ForeignKey('qoss.id', ondelete='CASCADE'),
+                       sa.ForeignKey('eayun_qoss.id', ondelete='CASCADE'),
                        nullable=False)
     queue_id = sa.Column(sa.String(36),
-                         sa.ForeignKey('qosqueues.id'))
+                         sa.ForeignKey('eayun_qosqueues.id'))
     prio = sa.Column(sa.Integer, nullable=False, unique=True)
     protocol = sa.Column(sa.Integer)
     src_port = sa.Column(sa.Integer)

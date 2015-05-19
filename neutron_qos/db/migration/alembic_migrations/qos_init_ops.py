@@ -22,7 +22,7 @@ directions = sa.Enum('ingress', 'egress', name='qoss_direction')
 
 def upgrade():
     op.create_table(
-        'qoss',
+        'eayun_qoss',
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('name', sa.String(length=255), nullable=True),
@@ -39,7 +39,7 @@ def upgrade():
         sa.PrimaryKeyConstraint('id')
     )
     op.create_table(
-        'qosqueues',
+        'eayun_qosqueues',
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('qos_id', sa.String(length=36), nullable=False),
@@ -49,11 +49,11 @@ def upgrade():
         sa.Column('ceil', sa.BigInteger(), nullable=True),
         sa.Column('burst', sa.BigInteger(), nullable=True),
         sa.Column('cburst', sa.BigInteger(), nullable=True),
-        sa.ForeignKeyConstraint(['qos_id'], ['qoss.id']),
+        sa.ForeignKeyConstraint(['qos_id'], ['eayun_qoss.id']),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_table(
-        'qosfilters',
+        'eayun_qosfilters',
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('qos_id', sa.String(length=36), nullable=False),
@@ -65,13 +65,13 @@ def upgrade():
         sa.Column('src_addr', sa.String(length=255), nullable=True),
         sa.Column('dst_addr', sa.String(length=255), nullable=True),
         sa.Column('custom_match', sa.String(length=255), nullable=True),
-        sa.ForeignKeyConstraint(['qos_id'], ['qoss.id']),
-        sa.ForeignKeyConstraint(['queue_id'], ['qosqueues.id']),
+        sa.ForeignKeyConstraint(['qos_id'], ['eayun_qoss.id']),
+        sa.ForeignKeyConstraint(['queue_id'], ['eayun_qosqueues.id']),
         sa.PrimaryKeyConstraint('id')
     )
 
 
 def downgrade():
-    op.drop_table('qosfilters')
-    op.drop_table('qosqueues')
-    op.drop_table('qoss')
+    op.drop_table('eayun_qosfilters')
+    op.drop_table('eayun_qosqueues')
+    op.drop_table('eayun_qoss')
