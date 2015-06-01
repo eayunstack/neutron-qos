@@ -410,8 +410,9 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
             new_rate = qos_queue.get('rate', qos_queue_db.rate)
             rate_delta = new_rate - qos_queue_db.rate
             self._check_qos_rate(qos_queue_db.qos, rate_delta)
-            if qos_queue_db.parent:
-                self._check_qos_queue_rate(qos_queue_db.parent, rate_delta)
+            if qos_queue_db.parent_queue:
+                self._check_qos_queue_rate(qos_queue_db.parent_queue,
+                                           rate_delta)
             if qos_queue_db.subqueues:
                 new_rate = qos_queue.get('rate', qos_queue_db.rate)
                 self._check_qos_queue_rate(qos_queue_db, 0, new_rate)
