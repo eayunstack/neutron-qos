@@ -77,7 +77,7 @@ class QosServerRpcServerMixin(qos_db.QosDbMixin):
                     if rp.port_id != router.gw_port_id:
                         ret.append(("qr-%s" % rp.port_id)[:NIC_NAME_LEN])
         elif qos_db.port_id is not None:
-            prefix = 'qvo' if qos_db.direction == 'ingress' else 'qvb'
+            prefix = 'qvo' if qos_db.direction == 'egress' else 'qvb'
             ret.append(("%s%s" % (prefix, qos_db.port_id))[:NIC_NAME_LEN])
 
         return ret
