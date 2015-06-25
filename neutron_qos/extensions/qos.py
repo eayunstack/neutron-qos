@@ -108,6 +108,11 @@ class QosInvalidFilterPrioValue(nexception.InvalidInput):
                 "It must be None or between 0 to 4294967295.")
 
 
+class QosDuplicateFilterPrioValue(nexception.InvalidInput):
+    message = _("Invalid value for filter prio: %(prio)s. "
+                "There is already a filter with the same prio under the qos.")
+
+
 class QosInvalidProtocolValue(nexception.InvalidInput):
     message = _("Invalid value for protocol: %(protocol)s. "
                 "It must be None or between 1 to 255.")

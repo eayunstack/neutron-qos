@@ -58,7 +58,7 @@ def upgrade():
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('qos_id', sa.String(length=36), nullable=False),
         sa.Column('queue_id', sa.String(length=36), nullable=True),
-        sa.Column('prio', sa.Integer(), nullable=False, unique=True),
+        sa.Column('prio', sa.Integer(), nullable=False),
         sa.Column('protocol', sa.Integer(), nullable=True),
         sa.Column('src_port', sa.Integer(), nullable=True),
         sa.Column('dst_port', sa.Integer(), nullable=True),
