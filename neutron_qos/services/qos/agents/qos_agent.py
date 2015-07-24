@@ -15,6 +15,9 @@
 
 import sys
 import uuid
+import eventlet
+eventlet.monkey_patch()
+
 
 from oslo.config import cfg
 
