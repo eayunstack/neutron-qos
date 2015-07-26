@@ -224,9 +224,9 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
             raise ext_qos.QosRateTooSmall(id=qos_id, rate=qos['rate'])
 
         if qos['router_id']:
-            self._check_router(context, qos['router_id'])
+            self._check_router(context, qos['router_id'], tenant_id)
         elif qos['port_id']:
-            self._check_port(context, qos['port_id'])
+            self._check_port(context, qos['port_id'], tenant_id)
 
         siblings = self._get_qos_siblings(
             context,
@@ -261,13 +261,13 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
 
         router_id = qos.get('router_id', None)
         port_id = qos.get('port_id', None)
-        if router_id:
-            self._check_router(context, router_id)
-        elif port_id:
-            self._check_port(context, port_id)
 
         with context.session.begin(subtransactions=True):
             qos_db = self._get_qos(context, id)
+            if router_id:
+                self._check_router(context, router_id, qos_db.tenant_id)
+            elif port_id:
+                self._check_port(context, port_id, qos_db.tenant_id)
             qos_queue_db = self._get_qos_queue(context,
                                                qos_db.default_queue_id)
 

@@ -82,19 +82,23 @@ class QosServerRpcServerMixin(qos_db.QosDbMixin):
 
         return ret
 
-    def _check_port(self, context, port_id):
+    def _check_port(self, context, port_id, tenant_id):
         plugin = manager.NeutronManager.get_plugin()
         adminContext = context if context.is_admin else context.elevated()
         port = plugin.get_port(adminContext, port_id)
         if not port['device_owner'].startswith('compute'):
             raise ext_qos.QosInvalidPortType(
                 port_id=port_id, port_type=port['device_owner'])
+        if not port['tenant_id'] == tenant_id:
+            raise ext_qos.QosTargetNotOwnedByTenant(target_id=port_id)
 
-    def _check_router(self, context, router_id):
+    def _check_router(self, context, router_id, tenant_id):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         adminContext = context if context.is_admin else context.elevated()
-        plugin.get_router(adminContext, router_id)
+        router = plugin.get_router(adminContext, router_id)
+        if not router['tenant_id'] == tenant_id:
+            raise ext_qos.QosTargetNotOwnedByTenant(target_id=router_id)
 
     def sync_qos(self, context, qos_list, host):
         hosting_qos = self._get_qos_on_host(context, host)
