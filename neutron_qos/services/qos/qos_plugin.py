@@ -16,11 +16,9 @@
 from neutron.api.rpc.agentnotifiers import qos_rpc_agent_api
 from neutron.common import rpc as n_rpc
 from neutron.db.qos import qos_rpc
-from neutron.db import portbindings_db
 
 
-class QosPlugin(qos_rpc.QosServerRpcServerMixin,
-                portbindings_db.PortBindingMixin):
+class QosPlugin(qos_rpc.QosServerRpcServerMixin):
 
     supported_extension_aliases = ['qos']
 
