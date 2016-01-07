@@ -194,7 +194,8 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
         return self._fields(res, fields)
 
     def _aggregate_rate_of_qos(self, qos):
-        return reduce(lambda x, y: x + y, [q.rate for q in qos.queues])
+        return reduce(lambda x, y: x + y,
+                      [q.rate for q in qos.queues if q.parent_queue is None])
 
     def _check_qos_rate(self, qos, delta, maximum=None):
         if maximum is None:
