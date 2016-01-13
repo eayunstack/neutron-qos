@@ -25,6 +25,9 @@ from neutron.extensions import qos as ext_qos
 from neutron.openstack.common import uuidutils
 from neutron.openstack.common import log as logging
 
+from neutron import manager
+from neutron.plugins.common import constants
+
 LOG = logging.getLogger(__name__)
 
 
@@ -112,6 +115,15 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
 
     __native_bulk_support = True
 
+    @property
+    def _core_plugin(self):
+        return manager.NeutronManager.get_plugin()
+
+    @property
+    def _l3_plugin(self):
+        return manager.NeutronManager.get_service_plugins().get(
+            constants.L3_ROUTER_NAT)
+
     def _get_qos(self, context, id):
         try:
             query = self._model_query(context, Qos)
@@ -119,47 +131,6 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
         except exc.NoResultFound:
             raise ext_qos.QosNotFound(id=id)
         return qos
-
-    def _get_qos_siblings(self, context, router_id, port_id):
-        if router_id:
-            return self._model_query(
-                context, Qos).filter(Qos.router_id == router_id).all()
-        elif port_id:
-            return self._model_query(
-                context, Qos).filter(Qos.port_id == port_id).all()
-        else:
-            return []
-
-    def _parse_qos_input(self, qos_input):
-        qos = qos_input['qos']
-        queue = dict()
-
-        if 'rate' in qos:
-            queue['ceil'] = qos.get('rate')
-
-        if 'default_rate' in qos:
-            queue['rate'] = qos.pop('default_rate')
-
-        if 'default_burst' in qos:
-            queue['burst'] = qos.pop('default_burst')
-
-        if 'default_cburst' in qos:
-            queue['cburst'] = qos.pop('default_cburst')
-
-        if 'target_type' not in qos and 'target_id' not in qos:
-            pass
-        else:
-            target_type = qos.pop('target_type')
-            target_id = qos.pop('target_id')
-
-            qos['port_id'] = qos['router_id'] = None
-            if (target_type is not None and target_id is not None):
-                if target_type == 'router':
-                    qos['router_id'] = target_id
-                elif target_type == 'port':
-                    qos['port_id'] = target_id
-
-        return qos, queue
 
     def _make_qos_dict(self, qos, fields=None):
         res = {'id': qos.id,
@@ -193,6 +164,21 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
 
         return self._fields(res, fields)
 
+    def _extract_default_queue_from_qos_param(self, qos):
+        EXTRACT_MAP = {
+            # param_in_qos: param_in_queue
+            'default_rate': 'rate',
+            'default_burst': 'burst',
+            'default_cburst': 'cburst'}
+        default_queue = {}
+
+        for param_in_qos, param_in_queue in EXTRACT_MAP.iteritems():
+            if param_in_qos in qos:
+                default_queue[param_in_queue] = qos.pop(param_in_qos)
+        if 'rate' in qos:
+            default_queue['ceil'] = qos['rate']
+        return default_queue
+
     def _aggregate_rate_of_qos(self, qos):
         return reduce(lambda x, y: x + y,
                       [q.rate for q in qos.queues if q.parent_queue is None])
@@ -206,85 +192,109 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
         if self._aggregate_rate_of_qos(qos) + delta > maximum:
             raise ext_qos.QosRateTooSmall(id=qos.id, rate=maximum)
 
+    def _check_qos_target(self, context,
+                          target_type, target_id, qos_direction):
+        ret = {'router_id': None, 'port_id': None}
+        if target_type is not None and target_id is not None:
+            # Need to check
+            try:
+                if target_type == 'port':
+                    target = self._core_plugin.get_port(context, target_id)
+                    if not target['device_owner'].startswith('compute'):
+                        raise ext_qos.QosInvalidPortType(
+                            port_id=target_id,
+                            port_type=target['device_owner'])
+                    ret['port_id'] = target_id
+                elif target_type == 'router':
+                    target = self._l3_plugin.get_router(context, target_id)
+                    ret['router_id'] = target_id
+                else:
+                    # Should not reach
+                    target = None
+            except exc.NoResultFound:
+                raise ext_qos.QosTargetNotFound(target_id=target_id)
+
+            for qos in target.eayun_qoss:
+                if qos.direction == qos_direction:
+                    raise ext_qos.QosConflict()
+        return ret
+
     def create_qos_bulk(self, context, qos):
         return self._create_bulk('qos', context, qos)
 
     def create_qos(self, context, qos):
         """ Create a qos and its default queue. """
-        qos, queue = self._parse_qos_input(qos)
+        qos = qos['qos']
+        default_queue = self._extract_default_queue_from_qos_param(qos)
+
+        if qos['rate'] < default_queue['rate']:
+            raise ext_qos.QosRateTooSmall(id=None, rate=qos['rate'])
+        qos_target = self._check_qos_target(
+            context, qos['target_type'], qos['target_id'], qos['direction'])
+
         tenant_id = self._get_tenant_id_for_create(context, qos)
-
-        qos_id = qos.get('id') or uuidutils.generate_uuid()
+        qos_id = qos.get('id', uuidutils.generate_uuid())
         default_queue_id = uuidutils.generate_uuid()
-
-        if qos['rate'] < queue['rate']:
-            raise ext_qos.QosRateTooSmall(id=qos_id, rate=qos['rate'])
-
-        if qos['router_id']:
-            self._check_router(context, qos['router_id'], tenant_id)
-        elif qos['port_id']:
-            self._check_port(context, qos['port_id'], tenant_id)
-
-        siblings = self._get_qos_siblings(
-            context,
-            qos['router_id'],
-            qos['port_id'])
-        if len(siblings) > 1:
-            raise ext_qos.QosConflict()
-        elif len(siblings) > 0:
-            if siblings[0].direction == qos['direction']:
-                raise ext_qos.QosConflict()
 
         with context.session.begin(subtransactions=True):
             qos_db = Qos(
                 id=qos_id, tenant_id=tenant_id,
                 name=qos['name'], description=qos['description'],
                 direction=qos['direction'],
-                port_id=qos['port_id'], router_id=qos['router_id'],
+                port_id=qos_target['port_id'],
+                router_id=qos_target['router_id'],
                 rate=qos['rate'], burst=qos['burst'], cburst=qos['cburst'],
                 default_queue_id=default_queue_id)
             qos_queue_db = QosQueue(
                 id=default_queue_id, tenant_id=tenant_id,
                 qos_id=qos_id, parent_id=None, prio=7,
-                rate=queue['rate'], ceil=queue['ceil'],
-                burst=queue['burst'], cburst=queue['cburst'])
+                rate=default_queue['rate'], ceil=default_queue['ceil'],
+                burst=default_queue['burst'], cburst=default_queue['cburst'])
             context.session.add(qos_db)
             context.session.add(qos_queue_db)
 
         return self._make_qos_dict(qos_db)
 
     def update_qos(self, context, id, qos):
-        qos, queue = self._parse_qos_input(qos)
-
-        router_id = qos.get('router_id', None)
-        port_id = qos.get('port_id', None)
+        qos = qos['qos']
+        default_queue = self._extract_default_queue_from_qos_param(qos)
 
         with context.session.begin(subtransactions=True):
             qos_db = self._get_qos(context, id)
-            if router_id:
-                self._check_router(context, router_id, qos_db.tenant_id)
-            elif port_id:
-                self._check_port(context, port_id, qos_db.tenant_id)
-            qos_queue_db = self._get_qos_queue(context,
-                                               qos_db.default_queue_id)
+            default_queue_db = self._get_qos_queue(
+                context, qos_db.default_queue_id)
 
+            # Check whether target has been changed
+            orig_target_type = orig_target_id = None
+            if qos_db.router_id:
+                orig_target_type = 'router'
+                orig_target_id = qos_db.router_id
+            elif qos_db.port_id:
+                orig_target_type = 'port'
+                orig_target_id = qos_db.port_id
+
+            target_type = qos.pop('target_type', orig_target_type)
+            target_id = qos.pop('target_id', orig_target_id)
+            if (
+                target_type != orig_target_type or
+                target_id != orig_target_id
+            ):
+                new_qos_target = self._check_qos_target(
+                    context, target_type, target_id, qos_db.direction)
+                qos.update(new_qos_target)
+
+            # Check whether rate scheme has been changed
             new_rate = qos.get('rate', qos_db.rate)
-            new_queue_rate = queue.get('rate', qos_queue_db.rate)
-            rate_delta = new_queue_rate - qos_queue_db.rate
-            self._check_qos_rate(qos_db, rate_delta, new_rate)
-
-            siblings = self._get_qos_siblings(context, router_id, port_id)
-            # In case original target_id was specified when update
-            siblings = filter(lambda s: s.id != qos_db.id, siblings)
-            if len(siblings) > 1:
-                raise ext_qos.QosConflict()
-            elif len(siblings) > 0:
-                if siblings[0].direction == qos_db.direction:
-                    raise ext_qos.QosConflict()
+            new_queue_rate = default_queue.get('rate', default_queue_db.rate)
+            default_queue_rate_delta = new_queue_rate - default_queue_db.rate
+            if default_queue_rate_delta or new_rate != qos_db.rate:
+                # Rate scheme has been changed, recheck
+                self._check_qos_rate(
+                    qos_db, default_queue_rate_delta, new_rate)
 
             qos_db.update(qos)
-            if queue:
-                qos_queue_db.update(queue)
+            if default_queue:
+                default_queue_db.update(default_queue)
 
         return self._make_qos_dict(qos_db)
 

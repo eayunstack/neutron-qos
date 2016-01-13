@@ -123,9 +123,8 @@ class QosInvalidPortValue(nexception.InvalidInput):
                 "It must be None or between 1 to 65535.")
 
 
-class QosTargetNotOwnedByTenant(nexception.Conflict):
-    message = _("The following target %(target_id)s is not owned by your "
-                "tenant.")
+class QosTargetNotFound(nexception.Conflict):
+    message = _("The following target %(target_id)s cannot be found.")
 
 
 def convert_to_tc_u32(value):
