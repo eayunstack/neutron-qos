@@ -16,8 +16,6 @@
 import sys
 import uuid
 import eventlet
-eventlet.monkey_patch()
-
 
 from oslo.config import cfg
 
@@ -35,6 +33,7 @@ from neutron import service as neutron_service
 from neutron import context
 from neutron import manager
 
+eventlet.monkey_patch()
 LOG = logging.getLogger(__name__)
 
 # Qos Info Dictionary:
