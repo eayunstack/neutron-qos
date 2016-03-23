@@ -196,7 +196,7 @@ def convert_to_cburst(value):
 
 def convert_to_filter_prio(value):
     try:
-        value = convert_to_tc_u32(value)
+        value = convert_to_tc_not_zero_u32(value)
         if not value <= 65535:
             raise ValueError
         return value
