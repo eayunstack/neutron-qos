@@ -316,6 +316,11 @@ class QosAgent(qos_rpc_agent_api.QosPluginRpc, manager.Manager):
                 ])
             if len(selector) > 1:
                 add_filter.extend(selector)
+            else:
+                # No selectors specified, give a default one
+                add_filter.extend([
+                    'u32', 'match', 'ip', 'src', '0.0.0.0/0'
+                ])
             add_filter.extend(['flowid', flowid])
 
             self._run_tc(add_filter, namespace)
