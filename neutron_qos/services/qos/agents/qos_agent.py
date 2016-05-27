@@ -108,11 +108,11 @@ class QosAgent(qos_rpc_agent_api.QosPluginRpc, manager.Manager):
         self.root_helper = config.get_root_helper(self.conf)
         super(QosAgent, self).__init__(host=host)
 
-    def _run_tc(self, cmd, namespace=''):
+    def _run_tc(self, cmd, namespace='', check_exit_code=False):
         if namespace:
             cmd = ['ip', 'netns', 'exec', namespace] + cmd
         return utils.execute(cmd, root_helper=self.root_helper,
-                             check_exit_code=False)
+                             check_exit_code=check_exit_code)
 
     def _tc_add_qos(self, qos_id):
         qos = self.qos_info['qos'][qos_id]
@@ -146,7 +146,7 @@ class QosAgent(qos_rpc_agent_api.QosPluginRpc, manager.Manager):
             if qos['cburst']:
                 add_class.extend(['cburst', qos['cburst']])
 
-            self._run_tc(add_qdisc, namespace)
+            self._run_tc(add_qdisc, namespace, check_exit_code=True)
             self._run_tc(add_class, namespace)
 
     def _tc_update_qos(self, qos_id):
@@ -433,7 +433,11 @@ class QosAgent(qos_rpc_agent_api.QosPluginRpc, manager.Manager):
             },
         }
         self.qos_info['qos'][qos_id] = added_qos
-        self._tc_add_qos(qos_id)
+        try:
+            self._tc_add_qos(qos_id)
+        except RuntimeError:
+            del self.qos_info['qos'][qos_id]
+            return
         for queue in qos['qos_queues']:
             self._add_queue(queue)
 
