@@ -220,6 +220,12 @@ class QosAgent(qos_rpc_agent_api.QosPluginRpc, manager.Manager):
                 add_class.extend(['cburst', queue['cburst']])
 
             self._run_tc(add_class, namespace)
+            add_sfq_qdisc = [
+                'tc', 'qdisc', 'add', 'dev', device,
+                'parent', class_id, 'handle', '%s:0' % queue['class'],
+                'sfq'
+            ]
+            self._run_tc(add_sfq_qdisc, namespace)
 
     def _tc_update_queue(self, queue_id):
         queue = self.qos_info['queue'][queue_id]
@@ -254,6 +260,12 @@ class QosAgent(qos_rpc_agent_api.QosPluginRpc, manager.Manager):
                 change_class.extend(['cburst', queue['cburst']])
 
             self._run_tc(change_class, namespace)
+            add_sfq_qdisc = [
+                'tc', 'qdisc', 'add', 'dev', device,
+                'parent', class_id, 'handle', '%s:0' % queue['class'],
+                'sfq'
+            ]
+            self._run_tc(add_sfq_qdisc, namespace)
 
     def _tc_delete_queue(self, queue_id):
         queue = self.qos_info['queue'][queue_id]
