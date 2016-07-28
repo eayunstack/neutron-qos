@@ -127,6 +127,10 @@ class QosTargetNotFound(nexception.Conflict):
     message = _("The following target %(target_id)s cannot be found.")
 
 
+class AllocateTCClassFailure(nexception.Conflict):
+    message = _("No more available tc class for qos %(qos_id)s.")
+
+
 def convert_to_tc_u32(value):
     """ Callers should at least catch ValueError and TypeError. """
     u32 = int(value)

@@ -14,21 +14,26 @@
 #    under the License.
 
 import sqlalchemy as sa
-from sqlalchemy import orm
+from sqlalchemy import orm, and_, or_
 from sqlalchemy.orm import exc
 
+from neutron.common import constants as n_constants
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.db import common_db_mixin as base_db
+from neutron.db import l3_agentschedulers_db as l3_agent_db
 from neutron.db import l3_db
+from neutron.extensions import agent as ext_agent
 from neutron.extensions import qos as ext_qos
 from neutron.openstack.common import uuidutils
 from neutron.openstack.common import log as logging
 
 from neutron import manager
 from neutron.plugins.common import constants
+from neutron.plugins.ml2 import models as ml2_models
 
 LOG = logging.getLogger(__name__)
+NIC_NAME_LEN = 14
 
 
 class Qos(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -72,6 +77,7 @@ class QosQueue(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     ceil = sa.Column(sa.BigInteger, nullable=False)
     burst = sa.Column(sa.BigInteger)
     cburst = sa.Column(sa.BigInteger)
+    tc_class = sa.Column(sa.Integer)
     qos = orm.relationship(
         Qos,
         backref=orm.backref(
@@ -110,7 +116,17 @@ class QosFilter(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         backref=orm.backref('attached_filters', lazy='joined', uselist=True))
 
 
-class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
+class QosTcClassRange(model_base.BASEV2):
+    __tablename__ = 'eayun_qostcclassranges'
+    qos_id = sa.Column(sa.String(36),
+                       sa.ForeignKey('eayun_qoss.id', ondelete='CASCADE'),
+                       nullable=False, primary_key=True)
+    first = sa.Column(sa.Integer, nullable=False)
+    last = sa.Column(sa.Integer, nullable=False)
+    qos = orm.relationship(Qos)
+
+
+class QosDb(ext_qos.QosPluginBase, base_db.CommonDbMixin):
     """ Mixin class to add security group to db_base_plugin_v2. """
 
     __native_bulk_support = True
@@ -388,6 +404,59 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
                 qos_queue_id=qos_queue.qos_id
             )
 
+    @staticmethod
+    def allocate_tc_class_for_queue(context, qos_queue):
+        if qos_queue.tc_class:
+            return
+        tc_class = None
+
+        with context.session.begin(subtransactions=True):
+            try:
+                if qos_queue.id == qos_queue.qos.default_queue_id:
+                    tc_class = 65534
+                else:
+                    tc_class = QosDb._try_allocate_new_tc_class(
+                        context, qos_queue.qos)
+            except ext_qos.AllocateTCClassFailure:
+                QosDb._rebuild_tc_class_range(context, qos_queue.qos)
+
+            if not tc_class:
+                tc_class = QosDb._try_allocate_new_tc_class(
+                    context, qos_queue.qos)
+
+            qos_queue.update({'tc_class': tc_class})
+
+    @staticmethod
+    def _try_allocate_new_tc_class(context, qos):
+        select_range = context.session.query(
+            QosTcClassRange).join(Qos).with_lockmode('update').first()
+        if select_range:
+            new_tc_class = select_range['first']
+            if select_range['first'] == select_range['last']:
+                LOG.debug("No more free tc class id in this slice, deleting "
+                          "range.")
+                context.session.delete(select_range)
+            else:
+                # Increse the first class id in this range
+                select_range['first'] = new_tc_class + 1
+            return new_tc_class
+        raise ext_qos.AllocateTCClassFailure(qos_id=qos.id)
+
+    @staticmethod
+    def _rebuild_tc_class_range(context, qos):
+        LOG.debug("Rebuilding tc class range for qos: %s", qos.id)
+        used_classes = sorted(
+            [1, 65534] +
+            [queue.tc_class for queue in qos.queues
+             if queue.tc_class is not None])
+        for index in range(len(used_classes) - 1):
+            if used_classes[index] + 1 < used_classes[index + 1]:
+                tc_class_range = QosTcClassRange(
+                    qos_id=qos.id,
+                    first=used_classes[index] + 1,
+                    last=used_classes[index+1] - 1)
+                context.session.add(tc_class_range)
+
     def _set_ceil_for_queues(self, max_ceil, queues):
         # Called within context.session
         for queue in queues:
@@ -586,3 +655,161 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
     def get_qos_filter(self, context, id, fields=None):
         qos_filter = self._get_qos_filter(context, id)
         return self._make_qos_filter_dict(qos_filter, fields)
+
+
+class QosPluginRpcDbMixin(object):
+
+    def _get_devices_for_qos(self, qos):
+        if qos.router:
+            if qos.direction == 'egress':
+                prefix = 'qg-'
+                ports = [qos.router.gw_port_id]
+            else:
+                prefix = 'qr-'
+                ports = [
+                    p.port_id
+                    for p in qos.router.attached_ports
+                    if p.port_id != qos.router.gw_port_id
+                ]
+        elif qos.port:
+            ports = [qos.port_id]
+            prefix = 'qvb' if qos.direction == 'egress' else 'qvo'
+        return [("%s%s" % (prefix, port))[:NIC_NAME_LEN] for port in ports]
+
+    def _make_qos_filter_dict_for_agent(self, qos_filter):
+        qos_filter_dict = {'prio': qos_filter.prio,
+                           'src_addr': qos_filter.src_addr,
+                           'dst_addr': qos_filter.dst_addr}
+        if qos_filter.protocol:
+            qos_filter_dict['protocol'] = qos_filter.protocol
+        if qos_filter.src_port:
+            qos_filter_dict['src_port'] = qos_filter.src_port
+        if qos_filter.dst_port:
+            qos_filter_dict['dst_port'] = qos_filter.dst_port
+        return qos_filter_dict
+
+    def _make_qos_queue_dict_for_agent(self, qos_queue):
+        qos_queue_dict = {'rate': qos_queue.rate,
+                          'ceil': qos_queue.ceil,
+                          'prio': qos_queue.prio}
+        if qos_queue.subqueues:
+            qos_queue_dict['subclasses'] = [
+                subqueue.tc_class for subqueue in qos_queue.subqueues]
+        elif qos_queue.attached_filters:
+            qos_queue_dict['filters'] = [
+                self._make_qos_filter_dict_for_agent(qos_filter)
+                for qos_filter in qos_queue.attached_filters
+            ]
+        if qos_queue.parent_queue:
+            qos_queue_dict['parent'] = qos_queue.parent_queue.tc_class
+        else:
+            qos_queue_dict['parent'] = 1
+        if qos_queue.burst:
+            qos_queue_dict['burst'] = qos_queue.burst
+        if qos_queue.cburst:
+            qos_queue_dict['cburst'] = qos_queue.cburst
+        return qos_queue_dict
+
+    def _get_qos_conf_scheme(self, context, qos):
+        root_class = {'rate': qos.rate, 'ceil': qos.rate, 'subclasses': [],
+                      'prio': 0}
+        if qos.burst:
+            root_class['burst'] = qos.burst
+        if qos.cburst:
+            root_class['cburst'] = qos.cburst
+
+        scheme = {}
+        effective_queues = {}
+        for queue in qos.queues:
+            if queue.attached_filters or queue.id == qos.default_queue_id:
+                _queue = queue
+                while _queue is not None:
+                    try:
+                        self.allocate_tc_class_for_queue(context, _queue)
+                    except ext_qos.AllocateTCClassFailure:
+                        LOG.warn("Failed to allocate tc class for queue %s.",
+                                 _queue.id)
+                        # Don't apply any qos scheme for this qos because the
+                        # number of queues exceeds Linux's support(65535).
+                        # However, this should RARELY happen.
+                        return None
+                    if _queue.id not in effective_queues:
+                        effective_queues[_queue.id] = _queue
+                        _queue = _queue.parent_queue
+                    else:
+                        # Current queue and its ancestors are all recorded.
+                        _queue = None
+
+        for queue in effective_queues.values():
+            scheme[queue.tc_class] = self._make_qos_queue_dict_for_agent(queue)
+            if queue.parent_queue is None:
+                root_class['subclasses'].append(queue.tc_class)
+
+        # Add root class
+        scheme[1] = root_class
+        return scheme
+
+    def _get_qos_for_agent(self, context, qos):
+        scheme = self._get_qos_conf_scheme(context, qos)
+        if scheme is None:
+            return None
+        return {'devices': self._get_devices_for_qos(qos),
+                'scheme': scheme}
+
+    def sync_qos(self, context, host):
+        try:
+            l3_agent = self._core_plugin._get_agent_by_type_and_host(
+                context, n_constants.AGENT_TYPE_L3, host)
+            if not l3_agent.is_active:
+                # L3 agent is dead, return nothing for routers
+                raise ext_agent.AgentNotFoundByTypeHost(
+                    agent_type=n_constants.AGENT_TYPE_L3,
+                    host=host)
+            binding_query = context.session.query(
+                l3_agent_db.RouterL3AgentBinding.router_id
+            ).filter(
+                l3_agent_db.RouterL3AgentBinding.l3_agent_id == l3_agent.id)
+            routers_bound_to_host = set(
+                binding.router_id for binding in binding_query)
+            router_query = context.session.query(
+                l3_db.Router
+            ).filter(
+                l3_db.Router.router_id.in_(routers_bound_to_host)
+            ).filter(
+                l3_db.Router.admin_state_up.is_(True))
+            routers_on_host = set(router.id for router in router_query)
+        except ext_agent.AgentNotFoundByTypeHost:
+            routers_on_host = set()
+
+        port_query = context.session.query(ml2_models.PortBinding)
+        port_query = port_query.filter(ml2_models.PortBinding.host == host)
+        ports_on_host = set(binding.port_id for binding in port_query)
+
+        query = context.session.query(Qos)
+        query = query.filter(
+            or_(
+                and_(Qos.router_id.isnot(None),
+                     Qos.router_id.in_(routers_on_host)),
+                and_(Qos.port_id.isnot(None),
+                     Qos.port_id.in_(ports_on_host))
+            )
+        )
+
+        qoss_on_host = {}
+        for qos in query.all():
+            namespace = None
+            if qos.router_id:
+                namespace = 'qrouter-' + qos.router_id
+                if namespace not in qoss_on_host:
+                    qoss_on_host[namespace] = []
+            elif qos.port_id:
+                if '_root' not in qoss_on_host:
+                    qoss_on_host['_root'] = []
+                namespace = '_root'
+
+            if namespace:
+                qos_for_agent = self._get_qos_for_agent(context, qos)
+                if qos_for_agent:
+                    qoss_on_host[namespace].append(qos_for_agent)
+
+        return qoss_on_host
