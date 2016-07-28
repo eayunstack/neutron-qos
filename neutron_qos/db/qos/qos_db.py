@@ -67,7 +67,7 @@ class QosQueue(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     parent_id = sa.Column(sa.String(36),
                           sa.ForeignKey('eayun_qosqueues.id',
                                         ondelete='CASCADE'))
-    prio = sa.Column(sa.Integer)
+    prio = sa.Column(sa.Integer, nullable=False)
     rate = sa.Column(sa.BigInteger, nullable=False)
     ceil = sa.Column(sa.BigInteger)
     burst = sa.Column(sa.BigInteger)

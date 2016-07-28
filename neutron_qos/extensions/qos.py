@@ -205,7 +205,7 @@ def convert_to_filter_prio(value):
 
 def convert_to_queue_prio(value):
     try:
-        value = convert_to_tc_u32_or_none(value)
+        value = convert_to_tc_u32(value)
         if not value <= 7:
             raise ValueError
         return value
@@ -303,7 +303,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'is_visible': True, 'default': None,
                       'validate': {'type:uuid_or_none': None}},
         'prio': {'allow_post': True, 'allow_put': True,
-                 'is_visible': True, 'default': None,
+                 'is_visible': True, 'default': 0,
                  'convert_to': convert_to_queue_prio},
         'rate': {'allow_post': True, 'allow_put': True,
                  'is_visible': True,
