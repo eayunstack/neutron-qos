@@ -98,8 +98,8 @@ class QosFilter(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     protocol = sa.Column(sa.Integer)
     src_port = sa.Column(sa.Integer)
     dst_port = sa.Column(sa.Integer)
-    src_addr = sa.Column(sa.String(255))
-    dst_addr = sa.Column(sa.String(255))
+    src_addr = sa.Column(sa.String(255), nullable=False)
+    dst_addr = sa.Column(sa.String(255), nullable=False)
     custom_match = sa.Column(sa.String(255))
     qos = orm.relationship(
         Qos,
