@@ -530,7 +530,7 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
             qos_filter_db.update(qos_filter)
         return self._make_qos_filter_dict(qos_filter_db)
 
-    def delete_qos_filter(self,  context, id):
+    def delete_qos_filter(self, context, id):
         qos_filter = self._get_qos_filter(context, id)
         with context.session.begin(subtransactions=True):
             context.session.delete(qos_filter)
