@@ -69,7 +69,7 @@ class QosQueue(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
                                         ondelete='CASCADE'))
     prio = sa.Column(sa.Integer, nullable=False)
     rate = sa.Column(sa.BigInteger, nullable=False)
-    ceil = sa.Column(sa.BigInteger)
+    ceil = sa.Column(sa.BigInteger, nullable=False)
     burst = sa.Column(sa.BigInteger)
     cburst = sa.Column(sa.BigInteger)
     qos = orm.relationship(
@@ -285,12 +285,23 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
 
             # Check whether rate scheme has been changed
             new_rate = qos.get('rate', qos_db.rate)
+            rate_changed = new_rate != qos_db.rate
             new_queue_rate = default_queue.get('rate', default_queue_db.rate)
             default_queue_rate_delta = new_queue_rate - default_queue_db.rate
-            if default_queue_rate_delta or new_rate != qos_db.rate:
+
+            if default_queue_rate_delta or rate_changed:
                 # Rate scheme has been changed, recheck
                 self._check_qos_rate(
                     qos_db, default_queue_rate_delta, new_rate)
+            if rate_changed:
+                # Rate changed, check its queues' ceil setting
+                self._set_ceil_for_queues(
+                    new_rate,
+                    [_queue for _queue in qos_db.queues
+                     if _queue.parent_queue is None])
+            else:
+                # Qos rate not changed, remove default_queue['ceil']
+                default_queue.pop('ceil', 0)
 
             qos_db.update(qos)
             if default_queue:
@@ -377,6 +388,15 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
                 qos_queue_id=qos_queue.qos_id
             )
 
+    def _set_ceil_for_queues(self, max_ceil, queues):
+        # Called within context.session
+        for queue in queues:
+            if queue.ceil > max_ceil:
+                # Parent ceil changed, change ceil settings of this queue
+                # and its subqueues.
+                queue.ceil = max_ceil
+                self._set_ceil_for_queues(max_ceil, queue.subqueues)
+
     def create_qos_queue_bulk(self, context, qos_queue):
         return self._create_bulk('qos_queue', context, qos_queue)
 
@@ -384,6 +404,8 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
         qos_queue = qos_queue['qos_queue']
 
         qos_db = self._get_qos(context, qos_queue['qos_id'])
+        queue_ceil = qos_queue['ceil'] or qos_db.rate
+        queue_ceil = min(queue_ceil, qos_db.rate)
         if qos_queue['parent_id'] is not None:
             parent_queue_db = self._get_qos_queue(context,
                                                   qos_queue['parent_id'])
@@ -391,6 +413,7 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
                 raise ext_qos.QosParentQueueInUse(parent_id=parent_queue_db.id)
             self._check_queue_in_qos(qos_db.id, parent_queue_db)
             self._check_qos_queue_rate(parent_queue_db, qos_queue['rate'])
+            queue_ceil = min(queue_ceil, parent_queue_db.ceil)
         else:
             self._check_qos_rate(qos_db, qos_queue['rate'])
         tenant_id = self._get_tenant_id_for_create(context, qos_queue)
@@ -400,7 +423,7 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
                 id=qos_queue_id, tenant_id=tenant_id,
                 qos_id=qos_queue['qos_id'], parent_id=qos_queue['parent_id'],
                 prio=qos_queue['prio'],
-                rate=qos_queue['rate'], ceil=qos_queue['ceil'],
+                rate=qos_queue['rate'], ceil=queue_ceil,
                 burst=qos_queue['burst'], cburst=qos_queue['cburst'])
             context.session.add(qos_queue_db)
 
@@ -417,14 +440,27 @@ class QosDbMixin(ext_qos.QosPluginBase, base_db.CommonDbMixin):
                     qos_queue_id=id)
             new_rate = qos_queue.get('rate', qos_queue_db.rate)
             rate_delta = new_rate - qos_queue_db.rate
+            if rate_delta:
+                if qos_queue_db.subqueues:
+                    # Check new rate can afford its subqueues' need
+                    self._check_qos_queue_rate(qos_queue_db, 0, new_rate)
+                if qos_queue_db.parent_queue:
+                    # Check parent queue can afford the delta
+                    self._check_qos_queue_rate(qos_queue_db.parent_queue,
+                                               rate_delta)
+                else:
+                    # Check parent qos can afford the delta
+                    self._check_qos_rate(qos_queue_db.qos, rate_delta)
+
+            new_ceil = qos_queue.get('ceil', qos_queue_db.ceil)
+            # New ceil should not exceed its parent's ceil
             if qos_queue_db.parent_queue:
-                self._check_qos_queue_rate(qos_queue_db.parent_queue,
-                                           rate_delta)
+                new_ceil = min(new_ceil, qos_queue_db.parent_queue.ceil)
             else:
-                self._check_qos_rate(qos_queue_db.qos, rate_delta)
-            if qos_queue_db.subqueues:
-                new_rate = qos_queue.get('rate', qos_queue_db.rate)
-                self._check_qos_queue_rate(qos_queue_db, 0, new_rate)
+                new_ceil = min(new_ceil, qos_queue_db.qos.rate)
+            if new_ceil < qos_queue_db.ceil:
+                # Ceil changed to a smaller value
+                self._set_ceil_for_queues(new_ceil, qos_queue_db.subqueues)
             qos_queue_db.update(qos_queue)
         return self._make_qos_queue_dict(qos_queue_db)
 
