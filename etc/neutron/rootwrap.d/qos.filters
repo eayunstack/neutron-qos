@@ -10,3 +10,4 @@
 
 # qos-agent
 tc: CommandFilter, tc, root
+neutron-get-htb-conf: CommandFilter, neutron-get-htb-conf, root
