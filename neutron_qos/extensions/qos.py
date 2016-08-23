@@ -123,9 +123,12 @@ class QosInvalidPortValue(nexception.InvalidInput):
                 "It must be None or between 1 to 65535.")
 
 
-class QosTargetNotOwnedByTenant(nexception.Conflict):
-    message = _("The following target %(target_id)s is not owned by your "
-                "tenant.")
+class QosTargetNotFound(nexception.Conflict):
+    message = _("The following target %(target_id)s cannot be found.")
+
+
+class AllocateTCClassFailure(nexception.Conflict):
+    message = _("No more available tc class for qos %(qos_id)s.")
 
 
 def convert_to_tc_u32(value):
@@ -206,7 +209,7 @@ def convert_to_filter_prio(value):
 
 def convert_to_queue_prio(value):
     try:
-        value = convert_to_tc_u32_or_none(value)
+        value = convert_to_tc_u32(value)
         if not value <= 7:
             raise ValueError
         return value
@@ -304,7 +307,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'is_visible': True, 'default': None,
                       'validate': {'type:uuid_or_none': None}},
         'prio': {'allow_post': True, 'allow_put': True,
-                 'is_visible': True, 'default': None,
+                 'is_visible': True, 'default': 0,
                  'convert_to': convert_to_queue_prio},
         'rate': {'allow_post': True, 'allow_put': True,
                  'is_visible': True,
@@ -349,10 +352,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                      'is_visible': True, 'default': None,
                      'convert_to': convert_to_port},
         'src_addr': {'allow_post': True, 'allow_put': True,
-                     'is_visible': True, 'default': None,
+                     'is_visible': True, 'default': '0.0.0.0/0',
                      'validate': {'type:subnet_or_none': None}},
         'dst_addr': {'allow_post': True, 'allow_put': True,
-                     'is_visible': True, 'default': None,
+                     'is_visible': True, 'default': '0.0.0.0/0',
                      'validate': {'type:subnet_or_none': None}},
         'custom_match': {'allow_post': True, 'allow_put': True,
                          'is_visible': True, 'default': None,
