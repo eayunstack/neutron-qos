@@ -13,44 +13,23 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api.rpc.agentnotifiers import qos_rpc_agent_api
 from neutron.common import rpc as n_rpc
-from neutron.db.qos import qos_db
-from neutron.services.qos.common import topics
+from neutron.db.qos import qos_rpc
 
 
-class QosRpcCallback(n_rpc.RpcCallback):
-
-    RPC_API_VERSION = '1.0'
-
-    def __init__(self, qos_plugin):
-        super(QosRpcCallback, self).__init__()
-        self.qos_plugin = qos_plugin
-
-    def sync_qos(self, context, host):
-        return self.qos_plugin.sync_qos(context, host)
-
-
-class QosAgentRpc(n_rpc.RpcProxy):
-
-    RPC_API_VERSION = '1.0'
-
-    def __init__(self):
-        super(QosAgentRpc, self).__init__(
-            topic=topics.QOS_AGENT, default_version=self.RPC_API_VERSION)
-
-
-class QosPlugin(qos_db.QosDb, qos_db.QosPluginRpcDbMixin):
+class QosPlugin(qos_rpc.QosServerRpcServerMixin):
 
     supported_extension_aliases = ['qos']
 
     def __init__(self):
         super(QosPlugin, self).__init__()
 
-        self.endpoints = [QosRpcCallback(self)]
+        self.endpoints = [qos_rpc.QosRpcCallbacks(self)]
 
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(
-            topics.QOS_PLUGIN, self.endpoints, fanout=False)
+            qos_rpc_agent_api.QOS_PLUGIN, self.endpoints, fanout=False)
         self.conn.consume_in_threads()
 
-        self.agent_rpc = QosAgentRpc()
+        self.notifier = qos_rpc_agent_api.QosAgentNotifyAPI()
