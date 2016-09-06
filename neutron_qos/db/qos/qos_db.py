@@ -16,6 +16,7 @@
 import sqlalchemy as sa
 from sqlalchemy import orm, and_, or_
 from sqlalchemy.orm import exc
+from sqlalchemy.sql.expression import true
 
 from neutron.common import constants as n_constants
 from neutron.db import model_base
@@ -774,9 +775,9 @@ class QosPluginRpcDbMixin(object):
             router_query = context.session.query(
                 l3_db.Router
             ).filter(
-                l3_db.Router.router_id.in_(routers_bound_to_host)
+                l3_db.Router.id.in_(routers_bound_to_host)
             ).filter(
-                l3_db.Router.admin_state_up.is_(True))
+                l3_db.Router.admin_state_up == true())
             routers_on_host = set(router.id for router in router_query)
         except ext_agent.AgentNotFoundByTypeHost:
             routers_on_host = set()
