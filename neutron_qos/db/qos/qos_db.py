@@ -216,14 +216,14 @@ class QosDb(ext_qos.QosPluginBase, base_db.CommonDbMixin):
             # Need to check
             try:
                 if target_type == 'port':
-                    target = self._core_plugin.get_port(context, target_id)
+                    target = self._core_plugin._get_port(context, target_id)
                     if not target['device_owner'].startswith('compute'):
                         raise ext_qos.QosInvalidPortType(
                             port_id=target_id,
                             port_type=target['device_owner'])
                     ret['port_id'] = target_id
                 elif target_type == 'router':
-                    target = self._l3_plugin.get_router(context, target_id)
+                    target = self._l3_plugin._get_router(context, target_id)
                     ret['router_id'] = target_id
                 else:
                     # Should not reach
