@@ -78,7 +78,7 @@ class QosAgent(manager.Manager):
             scheme = t['scheme']
             for device in devices:
                 if device not in current:
-                    LOG.debug('Device %(device) is not on this host.',
+                    LOG.debug('Device %(device)s is not on this host.',
                               {'device': device})
                     continue
                 tcmanager = TcManager(device, namespace,

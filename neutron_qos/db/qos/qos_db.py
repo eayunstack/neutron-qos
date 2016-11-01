@@ -664,7 +664,10 @@ class QosPluginRpcDbMixin(object):
         if qos.router:
             if qos.direction == 'egress':
                 prefix = 'qg-'
-                ports = [qos.router.gw_port_id]
+                if qos.router.gw_port_id:
+                    ports = [qos.router.gw_port_id]
+                else:
+                    ports = []
             else:
                 prefix = 'qr-'
                 ports = [
@@ -752,10 +755,11 @@ class QosPluginRpcDbMixin(object):
 
     def _get_qos_for_agent(self, context, qos):
         scheme = self._get_qos_conf_scheme(context, qos)
-        if scheme is None:
+        devices = self._get_devices_for_qos(qos)
+        if not devices or scheme is None:
             return None
-        return {'devices': self._get_devices_for_qos(qos),
-                'scheme': scheme}
+        else:
+            return {'devices': devices, 'scheme': scheme}
 
     def sync_qos(self, context, host):
         try:
