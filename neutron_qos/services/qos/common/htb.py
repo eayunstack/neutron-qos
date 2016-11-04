@@ -388,7 +388,7 @@ class RTNetLink(netns.NetNSSwitcher):
 def get_qos_conf_scheme(router_id=None, filter_by_name=None):
     namespace = None
     if router_id:
-        namespace = 'qrouter-' + router_id
+        namespace = netns.ROUTER_NS_PREFIX + router_id
 
     ret = {}
 

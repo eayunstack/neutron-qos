@@ -22,8 +22,6 @@ from neutron.services.qos.common import htb
 
 utils.synchronized('tc', external=True)
 
-ROUTER_NS_PREFIX = 'qrouter-'
-
 
 class TcManager(object):
     """Wrapper for tc."""
