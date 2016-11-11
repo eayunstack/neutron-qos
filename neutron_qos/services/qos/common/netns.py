@@ -28,10 +28,19 @@ __NR_setns = __NR_setns_map.get(
 ).get(platform.architecture()[0], 308)
 CLONE_NEWNET = 0x40000000
 
-NETNS_RUN_DIR_PATH = '/var/run/netns/{namespace}'
+NETNS_RUN_DIR_PATH = '/var/run/netns'
 NETNS_PID_PATH = '/proc/{pid}/ns/net'
+ROUTER_NS_PREFIX = 'qrouter-'
 
 libc = None
+
+
+def get_related_ns():
+    namespaces = ['_root']  # root netns by default
+    if os.path.isdir(NETNS_RUN_DIR_PATH):
+        namespaces += [netns for netns in os.listdir(NETNS_RUN_DIR_PATH)
+                       if netns.startswith(ROUTER_NS_PREFIX)]
+    return set(namespaces)
 
 
 def setns(netnsfd):
@@ -59,7 +68,7 @@ class NetNSSwitcher(object):
     def __enter__(self):
         if self._netns:
             self._save_origin_netns()
-            f = NETNS_RUN_DIR_PATH.format(namespace=self._netns)
+            f = os.path.join(NETNS_RUN_DIR_PATH, self._netns)
             if os.path.isfile(f):
                 nsfd = os.open(f, os.O_RDONLY)
                 setns(nsfd)

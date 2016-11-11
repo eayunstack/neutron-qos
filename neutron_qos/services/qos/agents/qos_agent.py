@@ -29,6 +29,7 @@ from neutron.openstack.common import lockutils
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
 from neutron.services.qos.agents.tc_manager import TcManager
+from neutron.services.qos.common import netns
 from neutron.services.qos.common import topics as qos_topics
 from neutron import service as neutron_service
 from neutron import context
@@ -69,6 +70,7 @@ class QosAgent(manager.Manager):
         self.host = host
         self.root_helper = config.get_root_helper(self.conf)
         self.plugin_rpc = QosPluginRpc(qos_topics.QOS_PLUGIN, self.host)
+        self.known_namespaces = netns.get_related_ns()
 
     def _compare_and_configure_qos(self, current, target, namespace):
         LOG.debug('Current is %(current)s, target is %(target)s.',
@@ -93,6 +95,14 @@ class QosAgent(manager.Manager):
 
     @lockutils.synchronized('qos-agent', 'neutron-')
     def _handle_qos_dict(self, qos_dict):
+        updated_namespaces = set(qos_dict.keys())
+
+        for namespace in self.known_namespaces:
+            if namespace not in qos_dict:
+                qos_dict.update({namespace: []})
+
+        self.known_namespaces = updated_namespaces
+
         for namespace, target in qos_dict.iteritems():
             if namespace == '_root':
                 namespace = None
