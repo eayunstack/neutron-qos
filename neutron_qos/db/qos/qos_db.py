@@ -25,6 +25,7 @@ from neutron.db import common_db_mixin as base_db
 from neutron.db import l3_agentschedulers_db as l3_agent_db
 from neutron.db import l3_db
 from neutron.extensions import agent as ext_agent
+from neutron.extensions import l3 as ext_l3
 from neutron.extensions import qos as ext_qos
 from neutron.openstack.common import uuidutils
 from neutron.openstack.common import log as logging
@@ -821,10 +822,12 @@ class QosPluginRpcDbMixin(object):
                 namespace = 'qrouter-' + qos.router_id
             elif qos.port_id:
                 if self._is_owner_floatingip(qos.port.device_owner):
-                    fips = self._l3_plugin.get_floatingips(
-                        context, filters={'port_id': qos.port_id})
-                    if fips:
-                        namespace = 'qrouter-' + fips[0]['router_id']
+                    try:
+                        fip = self._l3_plugin.get_floatingip(
+                            context, qos.port.device_id)
+                    except ext_l3.FloatingIPNotFound:
+                        continue
+                    namespace = 'qrouter-' + fip['router_id']
                 else:
                     namespace = '_root'
 
