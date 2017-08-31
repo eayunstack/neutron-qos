@@ -827,6 +827,8 @@ class QosPluginRpcDbMixin(object):
                             context, qos.port.device_id)
                     except ext_l3.FloatingIPNotFound:
                         continue
+                    if fip['router_id'] is None:
+                        continue
                     namespace = 'qrouter-' + fip['router_id']
                 else:
                     namespace = '_root'
